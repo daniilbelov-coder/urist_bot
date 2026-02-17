@@ -604,7 +604,7 @@ async def generate_disclaimer(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data == "confirm:edit")
+@router.callback_query(DisclaimerCreation.confirming, F.data == "confirm:edit")
 async def edit_parameters(callback: CallbackQuery, state: FSMContext):
     """Restart the process to edit parameters."""
     await callback.message.delete()
@@ -614,7 +614,7 @@ async def edit_parameters(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data == "confirm:restart")
+@router.callback_query(DisclaimerCreation.confirming, F.data == "confirm:restart")
 async def restart_creation(callback: CallbackQuery, state: FSMContext):
     """Restart disclaimer creation."""
     await callback.message.delete()
@@ -804,6 +804,13 @@ async def mass_process_end_date(message: Message, state: FSMContext):
     data = await state.get_data()
     creative_type = CreativeType(data["creative_type"])
     
+    # Validate date order for vendor
+    if creative_type == CreativeType.VENDOR:
+        is_valid, error = generator.validate_dates_order(data["start_date"], end_date)
+        if not is_valid:
+            await message.answer(f"❌ {error}\n\nВведите дату окончания заново:")
+            return
+
     if creative_type == CreativeType.DYNAMIC_NEWCOMER:
         await show_confirmation_mass(message, state)
     elif creative_type == CreativeType.CLASSIC_NEWCOMER:
@@ -812,6 +819,8 @@ async def mass_process_end_date(message: Message, state: FSMContext):
         await ask_discount_size_mass(message, state)
     elif creative_type == CreativeType.CERTIFICATE:
         await ask_usage_count_mass(message, state)
+    elif creative_type == CreativeType.VENDOR:
+        await show_confirmation_mass(message, state)
 
 
 async def ask_max_discount_mass(message: Message, state: FSMContext):
@@ -1032,15 +1041,22 @@ async def generate_mass_disclaimers(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(MassGeneration.confirming, F.data == "confirm:edit")
+async def mass_edit_parameters(callback: CallbackQuery, state: FSMContext):
+    """Restart mass generation to edit parameters."""
+    await callback.message.delete()
+    await callback.message.answer("Давайте начнем заново.")
+    await state.clear()
+    await cmd_mass_create(callback.message, state)
+    await callback.answer()
+
+
 @router.callback_query(MassGeneration.confirming, F.data == "confirm:restart")
 async def mass_restart_creation(callback: CallbackQuery, state: FSMContext):
     """Restart mass generation."""
     await callback.message.delete()
     await state.clear()
-    
-    message_obj = callback.message
-    # Create a fake message object for cmd_mass_create
-    await cmd_mass_create(message_obj, state)
+    await cmd_mass_create(callback.message, state)
     await callback.answer()
 
 
