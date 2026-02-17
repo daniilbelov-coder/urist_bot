@@ -138,14 +138,25 @@ class DisclaimerGenerator:
     def validate_params(self, params: CreativeParams) -> Tuple[bool, Optional[str]]:
         """
         Validate all parameters for a creative type.
-        
+
         Returns:
             Tuple of (is_valid, error_message)
         """
-        # Validate city
-        is_valid, error = self.validate_city(params.city)
-        if not is_valid:
-            return False, error
+        # Validate geography (either city or cities)
+        if params.city:
+            is_valid, error = self.validate_city(params.city)
+            if not is_valid:
+                return False, error
+        elif params.cities:
+            if not params.cities:
+                return False, "Список городов пуст"
+
+            for city in params.cities:
+                is_valid, error = self.validate_city(city)
+                if not is_valid:
+                    return False, error
+        else:
+            return False, "Не указан город или список городов"
         
         # Type-specific validation
         if params.creative_type == CreativeType.DYNAMIC_NEWCOMER:
@@ -382,5 +393,72 @@ class DisclaimerGenerator:
             f"{self.LIMITED_QUANTITY} "
             f"{legal_entity}"
         )
-        
+
         return disclaimer
+
+    def generate_multiple(self, params: CreativeParams) -> dict:
+        """
+        Generate disclaimers for multiple cities.
+
+        Args:
+            params: CreativeParams with cities field populated
+
+        Returns:
+            Dict mapping city name to disclaimer text
+
+        Raises:
+            ValidationError: If params are invalid
+        """
+        if not params.cities:
+            raise ValidationError("No cities provided")
+
+        disclaimers = {}
+        for city in params.cities:
+            # Create separate CreativeParams for each city
+            single_params = CreativeParams(
+                city=city,
+                creative_type=params.creative_type,
+                channel=params.channel,
+                end_date=params.end_date,
+                max_discount_amount=params.max_discount_amount,
+                add_delivery_info=params.add_delivery_info,
+                delivery_info_text=params.delivery_info_text,
+                discount_size=params.discount_size,
+                discount_unit=params.discount_unit,
+                first_order_only=params.first_order_only,
+                specific_category=params.specific_category,
+                min_order_amount=params.min_order_amount,
+                max_promo_discount=params.max_promo_discount,
+                usage_count=params.usage_count,
+                start_date=params.start_date
+            )
+
+            # Generate disclaimer
+            disclaimer = self.generate(single_params)
+            disclaimers[city] = disclaimer
+
+        return disclaimers
+
+    def format_multiple_to_file(self, disclaimers: dict) -> str:
+        """
+        Format multiple disclaimers into a single text file content.
+
+        Args:
+            disclaimers: Dict mapping city name to disclaimer text
+
+        Returns:
+            Formatted text for .txt file
+        """
+        from models import normalize_city_name
+
+        lines = []
+
+        # For each city
+        for city, disclaimer in disclaimers.items():
+            city_display = normalize_city_name(city).upper()
+            lines.append(city_display)
+            lines.append("-" * 40)
+            lines.append(disclaimer)
+            lines.append("")  # Empty line between cities
+
+        return "\n".join(lines)

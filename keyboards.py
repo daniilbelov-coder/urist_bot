@@ -7,7 +7,16 @@ from aiogram.types import (
     ReplyKeyboardRemove
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
-from models import CreativeType, ChannelType, CREATIVE_TYPE_NAMES, CHANNEL_NAMES, CORPORATE_CITIES, FRANCHISE_ENTITIES
+from models import CreativeType, ChannelType, CREATIVE_TYPE_NAMES, CHANNEL_NAMES, CORPORATE_CITIES, FRANCHISE_ENTITIES, ALL_CITIES, normalize_city_name
+
+
+def get_scenario_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for scenario selection."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🏙 Один город", callback_data="scenario:single")
+    builder.button(text="🌍 Несколько городов", callback_data="scenario:multiple")
+    builder.adjust(1)  # One button per row
+    return builder.as_markup()
 
 
 def get_creative_type_keyboard() -> InlineKeyboardMarkup:
@@ -129,6 +138,57 @@ def get_result_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📋 Главное меню", callback_data="result:menu")
     
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_multiple_geography_keyboard(selected_cities: list) -> InlineKeyboardMarkup:
+    """Get keyboard for selecting multiple cities with checkmarks."""
+    builder = InlineKeyboardBuilder()
+
+    # MO
+    checkmark = "✅ " if "мо" in selected_cities else ""
+    builder.button(text=f"{checkmark}🏙 МО", callback_data="multi_geo:toggle:мо")
+
+    # Corporate cities (excluding МО aliases)
+    corporate_display = [
+        "москва", "санкт-петербург", "казань", "новосибирск",
+        "нижний новгород", "ростов", "краснодар", "екатеринбург",
+        "челябинск", "тюмень", "сочи", "воронеж", "пермь"
+    ]
+
+    for city in corporate_display:
+        checkmark = "✅ " if city in selected_cities else ""
+        display = normalize_city_name(city)
+        builder.button(text=f"{checkmark}📍 {display}", callback_data=f"multi_geo:toggle:{city}")
+
+    # Franchise cities
+    for city in sorted(FRANCHISE_ENTITIES.keys()):
+        checkmark = "✅ " if city in selected_cities else ""
+        display = normalize_city_name(city)
+        builder.button(text=f"{checkmark}🏪 {display}", callback_data=f"multi_geo:toggle:{city}")
+
+    builder.adjust(2)  # Two buttons per row
+
+    # Control buttons
+    # Count unique cities (МО is one city, avoid counting duplicates)
+    unique_cities_count = len(ALL_CITIES)
+    all_selected = len(selected_cities) == unique_cities_count
+    all_text = "❌ Снять все" if all_selected else "✅ Все города"
+    builder.button(text=all_text, callback_data="multi_geo:all")
+
+    next_text = f"➡️ Далее ({len(selected_cities)})"
+    builder.button(text=next_text, callback_data="multi_geo:next")
+
+    builder.button(text="◀️ Назад", callback_data="multi_geo:back")
+
+    # Adjust layout: keep pairs for cities, then individual control buttons
+    city_count = 1 + len(corporate_display) + len(FRANCHISE_ENTITIES)  # МО + corporate + franchise
+    row_widths = [2] * (city_count // 2)
+    if city_count % 2 == 1:
+        row_widths.append(1)
+    row_widths.extend([1, 1, 1])  # Control buttons on separate rows
+    builder.adjust(*row_widths)
+
     return builder.as_markup()
 
 

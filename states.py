@@ -4,8 +4,10 @@ from aiogram.fsm.state import State, StatesGroup
 
 class DisclaimerCreation(StatesGroup):
     """States for step-by-step disclaimer creation."""
+    choosing_scenario = State()  # New: scenario selection (single/multiple)
     choosing_type = State()
     choosing_geography = State()
+    choosing_multiple_geography = State()  # New: multiple cities selection
     choosing_channel = State()
     entering_end_date = State()
     entering_max_discount = State()

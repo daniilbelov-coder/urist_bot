@@ -173,17 +173,20 @@ def normalize_city_name(city: str) -> str:
 class CreativeParams:
     """Parameters for disclaimer generation."""
     creative_type: CreativeType
-    city: str
     channel: ChannelType
-    
+
+    # Geography - either single city or multiple cities
+    city: Optional[str] = None  # For single mode (backward compatibility)
+    cities: Optional[List[str]] = None  # For multiple mode
+
     # Common fields
     end_date: Optional[str] = None
-    
+
     # Newcomer discount specific
     max_discount_amount: Optional[int] = None
     add_delivery_info: bool = False
     delivery_info_text: Optional[str] = None
-    
+
     # Promo code specific
     discount_size: Optional[float] = None
     discount_unit: Optional[str] = None  # "%" or "₽"
@@ -191,12 +194,19 @@ class CreativeParams:
     specific_category: Optional[str] = None
     min_order_amount: Optional[int] = None
     max_promo_discount: Optional[int] = None
-    
+
     # Certificate specific
     usage_count: Optional[int] = None
-    
+
     # Vendor specific
     start_date: Optional[str] = None
+
+    def __post_init__(self):
+        """Validate that either city or cities is provided."""
+        if not self.city and not self.cities:
+            raise ValueError("Either city or cities must be provided")
+        if self.city and self.cities:
+            raise ValueError("Cannot specify both city and cities")
 
 
 # Creative type display names

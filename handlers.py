@@ -9,8 +9,10 @@ from states import DisclaimerCreation
 from models import CreativeType, ChannelType, CreativeParams, CREATIVE_TYPE_NAMES, normalize_city_name
 from generator import DisclaimerGenerator, ValidationError
 from keyboards import (
+    get_scenario_keyboard,
     get_creative_type_keyboard,
     get_geography_keyboard,
+    get_multiple_geography_keyboard,
     get_channel_keyboard,
     get_yes_no_keyboard,
     get_discount_unit_keyboard,
@@ -76,12 +78,12 @@ async def cmd_help(message: Message):
 @router.message(Command("create"))
 @router.message(F.text == "➕ Создать дисклеймер")
 async def cmd_create(message: Message, state: FSMContext):
-    """Start step-by-step disclaimer creation."""
+    """Start disclaimer creation with scenario selection."""
     await state.clear()
-    await state.set_state(DisclaimerCreation.choosing_type)
-    
-    text = "Выберите тип креатива:"
-    await message.answer(text, reply_markup=get_creative_type_keyboard())
+    await state.set_state(DisclaimerCreation.choosing_scenario)
+
+    text = "Выберите режим создания:"
+    await message.answer(text, reply_markup=get_scenario_keyboard())
 
 
 @router.message(F.text == "❓ Помощь")
@@ -90,20 +92,53 @@ async def btn_help(message: Message):
     await cmd_help(message)
 
 
+# Scenario selection
+@router.callback_query(DisclaimerCreation.choosing_scenario, F.data.startswith("scenario:"))
+async def process_scenario_selection(callback: CallbackQuery, state: FSMContext):
+    """Process scenario selection (single/multiple)."""
+    scenario = callback.data.split(":")[1]  # "single" or "multiple"
+    await state.update_data(scenario_mode=scenario)
+
+    # Transition to creative type selection (common for both modes)
+    await state.set_state(DisclaimerCreation.choosing_type)
+
+    text = "Выберите тип креатива:"
+    await callback.message.edit_text(text, reply_markup=get_creative_type_keyboard())
+    await callback.answer()
+
+
 # Type selection
 @router.callback_query(DisclaimerCreation.choosing_type, F.data.startswith("type:"))
 async def process_type_selection(callback: CallbackQuery, state: FSMContext):
     """Process creative type selection."""
     creative_type = callback.data.split(":")[1]
     await state.update_data(creative_type=creative_type)
-    
-    await state.set_state(DisclaimerCreation.choosing_geography)
-    keyboard = add_back_button(get_geography_keyboard(), "back:to_type")
-    await callback.message.edit_text(
-        f"✅ Тип: {CREATIVE_TYPE_NAMES[CreativeType(creative_type)]}\n\n"
-        "Выберите географию:",
-        reply_markup=keyboard
-    )
+
+    data = await state.get_data()
+    scenario_mode = data.get("scenario_mode", "single")
+
+    if scenario_mode == "multiple":
+        # Multiple mode
+        await state.set_state(DisclaimerCreation.choosing_multiple_geography)
+        await state.update_data(selected_cities=[])
+
+        text = (
+            f"✅ Тип: {CREATIVE_TYPE_NAMES[CreativeType(creative_type)]}\n\n"
+            "Выберите города (можно несколько):"
+        )
+        keyboard = get_multiple_geography_keyboard([])
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    else:
+        # Single mode (existing logic)
+        await state.set_state(DisclaimerCreation.choosing_geography)
+
+        keyboard = add_back_button(get_geography_keyboard(), "back:to_type")
+        text = (
+            f"✅ Тип: {CREATIVE_TYPE_NAMES[CreativeType(creative_type)]}\n\n"
+            "Выберите географию:"
+        )
+        await callback.message.edit_text(text, reply_markup=keyboard)
+
     await callback.answer()
 
 
@@ -113,7 +148,7 @@ async def process_geography_selection(callback: CallbackQuery, state: FSMContext
     """Process geography selection."""
     city = callback.data.split(":")[1]
     await state.update_data(city=city)
-    
+
     await state.set_state(DisclaimerCreation.choosing_channel)
     keyboard = add_back_button(get_channel_keyboard(), "back:to_geography")
     await callback.message.edit_text(
@@ -122,6 +157,80 @@ async def process_geography_selection(callback: CallbackQuery, state: FSMContext
         reply_markup=keyboard
     )
     await callback.answer()
+
+
+# Multiple geography selection
+@router.callback_query(DisclaimerCreation.choosing_multiple_geography, F.data.startswith("multi_geo:"))
+async def process_multiple_geography(callback: CallbackQuery, state: FSMContext):
+    """Process multiple geography selection."""
+    parts = callback.data.split(":")
+    action = parts[1]
+
+    data = await state.get_data()
+    selected_cities = data.get("selected_cities", [])
+
+    if action == "toggle":
+        # Toggle city selection
+        city = parts[2]
+        if city in selected_cities:
+            selected_cities.remove(city)
+        else:
+            selected_cities.append(city)
+
+        await state.update_data(selected_cities=selected_cities)
+
+        # Update keyboard
+        keyboard = get_multiple_geography_keyboard(selected_cities)
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        await callback.answer(f"Выбрано: {len(selected_cities)}")
+
+    elif action == "all":
+        # Toggle: select all or deselect all
+        from models import ALL_CITIES
+
+        if len(selected_cities) == len(ALL_CITIES):
+            selected_cities = []
+            message = "Все города сняты"
+        else:
+            selected_cities = list(ALL_CITIES)
+            message = f"Выбраны все города ({len(ALL_CITIES)})"
+
+        await state.update_data(selected_cities=selected_cities)
+
+        keyboard = get_multiple_geography_keyboard(selected_cities)
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        await callback.answer(message)
+
+    elif action == "next":
+        # Check that at least one city is selected
+        if not selected_cities:
+            await callback.answer("⚠️ Выберите хотя бы один город", show_alert=True)
+            return
+
+        # Transition to channel selection (common flow)
+        await state.set_state(DisclaimerCreation.choosing_channel)
+
+        creative_type = data.get("creative_type")
+        cities_text = ", ".join([normalize_city_name(c) for c in selected_cities[:3]])
+        if len(selected_cities) > 3:
+            cities_text += f" и ещё {len(selected_cities) - 3}"
+
+        text = (
+            f"✅ Тип: {CREATIVE_TYPE_NAMES[CreativeType(creative_type)]}\n"
+            f"✅ Города: {cities_text} ({len(selected_cities)})\n\n"
+            "Выберите канал размещения:"
+        )
+        keyboard = add_back_button(get_channel_keyboard(), "back:to_multi_geography")
+        await callback.message.edit_text(text, reply_markup=keyboard)
+        await callback.answer()
+
+    elif action == "back":
+        # Go back to scenario selection
+        await state.set_state(DisclaimerCreation.choosing_scenario)
+
+        text = "Выберите режим создания:"
+        await callback.message.edit_text(text, reply_markup=get_scenario_keyboard())
+        await callback.answer()
 
 
 # Channel selection
@@ -188,15 +297,33 @@ async def back_to_channel(callback: CallbackQuery, state: FSMContext):
     """Go back to channel selection."""
     data = await state.get_data()
     city = data.get("city", "")
-    
+
     await state.set_state(DisclaimerCreation.choosing_channel)
     keyboard = add_back_button(get_channel_keyboard(), "back:to_geography")
-    
+
     await callback.message.edit_text(
         f"✅ География: {normalize_city_name(city)}\n\n"
         "Выберите канал размещения:",
         reply_markup=keyboard
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back:to_multi_geography")
+async def back_to_multi_geography(callback: CallbackQuery, state: FSMContext):
+    """Go back to multiple geography selection."""
+    data = await state.get_data()
+    creative_type = data.get("creative_type")
+    selected_cities = data.get("selected_cities", [])
+
+    await state.set_state(DisclaimerCreation.choosing_multiple_geography)
+
+    text = (
+        f"✅ Тип: {CREATIVE_TYPE_NAMES[CreativeType(creative_type)]}\n\n"
+        "Выберите города (можно несколько):"
+    )
+    keyboard = get_multiple_geography_keyboard(selected_cities)
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 
@@ -511,14 +638,25 @@ async def process_usage_count(message: Message, state: FSMContext):
 async def show_confirmation(message: Message, state: FSMContext):
     """Show confirmation with all parameters."""
     await state.set_state(DisclaimerCreation.confirming)
-    
+
     data = await state.get_data()
     creative_type = CreativeType(data["creative_type"])
-    
+    scenario_mode = data.get("scenario_mode", "single")
+
     # Build summary
     summary = "📋 <b>Проверьте параметры:</b>\n\n"
     summary += f"🎨 <b>Тип:</b> {CREATIVE_TYPE_NAMES[creative_type]}\n"
-    summary += f"📍 <b>География:</b> {normalize_city_name(data['city'])}\n"
+
+    # Geography display
+    if scenario_mode == "multiple":
+        selected_cities = data.get("selected_cities", [])
+        cities_text = ", ".join([normalize_city_name(c) for c in selected_cities[:3]])
+        if len(selected_cities) > 3:
+            cities_text += f" и ещё {len(selected_cities) - 3}"
+        summary += f"📍 <b>География:</b> {cities_text} ({len(selected_cities)})\n"
+    else:
+        summary += f"📍 <b>География:</b> {normalize_city_name(data['city'])}\n"
+
     summary += f"📺 <b>Канал:</b> {'ТВ/Радио' if data['channel'] == 'tv_radio' else 'Другие форматы'}\n"
     
     if data.get("end_date"):
@@ -558,48 +696,114 @@ async def show_confirmation(message: Message, state: FSMContext):
 
 @router.callback_query(DisclaimerCreation.confirming, F.data == "confirm:yes")
 async def generate_disclaimer(callback: CallbackQuery, state: FSMContext):
-    """Generate and show disclaimer."""
+    """Generate disclaimer(s) based on collected parameters."""
     data = await state.get_data()
-    
+    scenario_mode = data.get("scenario_mode", "single")
+
     try:
-        # Build parameters
-        params = CreativeParams(
-            creative_type=CreativeType(data["creative_type"]),
-            city=data["city"],
-            channel=ChannelType(data["channel"]),
-            end_date=data.get("end_date"),
-            max_discount_amount=data.get("max_discount_amount"),
-            add_delivery_info=data.get("add_delivery_info", False),
-            delivery_info_text=data.get("delivery_info_text"),
-            discount_size=data.get("discount_size"),
-            discount_unit=data.get("discount_unit"),
-            first_order_only=data.get("first_order_only", False),
-            specific_category=data.get("specific_category"),
-            min_order_amount=data.get("min_order_amount"),
-            max_promo_discount=data.get("max_promo_discount"),
-            usage_count=data.get("usage_count"),
-            start_date=data.get("start_date")
-        )
-        
-        # Generate disclaimer
-        disclaimer = generator.generate(params)
-        
-        result_text = (
-            "✅ <b>Дисклеймер готов!</b>\n\n"
-            f"<pre>{disclaimer}</pre>\n\n"
-            "📋 Нажмите на текст для копирования"
-        )
-        
-        await callback.message.edit_text(result_text, parse_mode="HTML", reply_markup=get_result_keyboard())
+        if scenario_mode == "single":
+            # === SINGLE MODE (existing logic) ===
+            params = CreativeParams(
+                creative_type=CreativeType(data["creative_type"]),
+                city=data["city"],
+                channel=ChannelType(data["channel"]),
+                end_date=data.get("end_date"),
+                max_discount_amount=data.get("max_discount_amount"),
+                add_delivery_info=data.get("add_delivery_info", False),
+                delivery_info_text=data.get("delivery_info_text"),
+                discount_size=data.get("discount_size"),
+                discount_unit=data.get("discount_unit"),
+                first_order_only=data.get("first_order_only", False),
+                specific_category=data.get("specific_category"),
+                min_order_amount=data.get("min_order_amount"),
+                max_promo_discount=data.get("max_promo_discount"),
+                usage_count=data.get("usage_count"),
+                start_date=data.get("start_date")
+            )
+
+            disclaimer = generator.generate(params)
+
+            result_text = (
+                "✅ <b>Дисклеймер готов!</b>\n\n"
+                f"<pre>{disclaimer}</pre>\n\n"
+                "📋 Нажмите на текст для копирования"
+            )
+
+            await callback.message.edit_text(result_text, parse_mode="HTML", reply_markup=get_result_keyboard())
+
+        else:  # multiple
+            # === MULTIPLE MODE (new logic) ===
+            params = CreativeParams(
+                creative_type=CreativeType(data["creative_type"]),
+                cities=data["selected_cities"],
+                channel=ChannelType(data["channel"]),
+                end_date=data.get("end_date"),
+                max_discount_amount=data.get("max_discount_amount"),
+                add_delivery_info=data.get("add_delivery_info", False),
+                delivery_info_text=data.get("delivery_info_text"),
+                discount_size=data.get("discount_size"),
+                discount_unit=data.get("discount_unit"),
+                first_order_only=data.get("first_order_only", False),
+                specific_category=data.get("specific_category"),
+                min_order_amount=data.get("min_order_amount"),
+                max_promo_discount=data.get("max_promo_discount"),
+                usage_count=data.get("usage_count"),
+                start_date=data.get("start_date")
+            )
+
+            # Generate for all cities
+            disclaimers = generator.generate_multiple(params)
+
+            # Format to file
+            file_content = generator.format_multiple_to_file(disclaimers)
+
+            # Determine filename based on creative type
+            from models import CREATIVE_TYPE_NAMES
+            creative_type_name = CREATIVE_TYPE_NAMES[params.creative_type]
+            # Convert to safe filename
+            safe_name = creative_type_name.lower()
+            safe_name = safe_name.replace(" ", "_").replace("(", "").replace(")", "")
+            filename = f"disclaimers_{safe_name}.txt"
+
+            # Create file and send
+            from aiogram.types import BufferedInputFile
+
+            file = BufferedInputFile(
+                file_content.encode('utf-8'),
+                filename=filename
+            )
+
+            await callback.message.answer_document(
+                document=file,
+                caption=(
+                    f"✅ <b>Дисклеймеры готовы!</b>\n\n"
+                    f"📊 Сгенерировано для {len(data['selected_cities'])} городов\n"
+                    f"🎨 Тип: {creative_type_name}"
+                ),
+                parse_mode="HTML",
+                reply_markup=get_result_keyboard()
+            )
+
+            await callback.message.delete()  # Delete confirmation message
+
         await state.clear()
-        
+
     except ValidationError as e:
         await callback.message.edit_text(
-            f"❌ <b>Ошибка валидации:</b>\n{str(e)}\n\nИспользуйте /create для создания нового дисклеймера.",
+            f"❌ <b>Ошибка валидации:</b>\n{str(e)}\n\n"
+            "Используйте /create для создания нового дисклеймера.",
             parse_mode="HTML"
         )
         await state.clear()
-    
+
+    except Exception as e:
+        logger.error(f"Error in disclaimer generation: {e}", exc_info=True)
+        await callback.message.edit_text(
+            f"❌ <b>Ошибка:</b>\n{str(e)}",
+            parse_mode="HTML"
+        )
+        await state.clear()
+
     await callback.answer()
 
 
