@@ -37,7 +37,7 @@ class DisclaimerGenerator:
     @staticmethod
     def validate_date(date_str: str) -> Tuple[bool, Optional[str]]:
         """
-        Validate date format DD.MM.YY.
+        Validate date format DD.MM.YY or DD.MM.YYYY.
         
         Returns:
             Tuple of (is_valid, error_message)
@@ -45,13 +45,15 @@ class DisclaimerGenerator:
         if not date_str:
             return False, "Дата не указана"
         
-        pattern = r'^(\d{2})\.(\d{2})\.(\d{2})$'
+        # Support both 2-digit and 4-digit year formats
+        pattern = r'^(\d{2})\.(\d{2})\.(\d{2}|\d{4})$'
         match = re.match(pattern, date_str)
         
         if not match:
-            return False, f"Неверный формат даты. Используйте ДД.ММ.ГГ (например, 31.12.24)"
+            return False, f"Неверный формат даты. Используйте ДД.ММ.ГГ или ДД.ММ.ГГГГ (например, 31.12.24 или 31.12.2024)"
         
-        day, month, year = map(int, match.groups())
+        day, month, year_str = match.groups()
+        day, month = int(day), int(month)
         
         # Validate ranges
         if not (1 <= month <= 12):
@@ -107,8 +109,24 @@ class DisclaimerGenerator:
     def validate_dates_order(start_date: str, end_date: str) -> Tuple[bool, Optional[str]]:
         """Validate that start date is before end date."""
         try:
-            start = datetime.strptime(start_date, "%d.%m.%y")
-            end = datetime.strptime(end_date, "%d.%m.%y")
+            # Normalize dates to handle both YY and YYYY formats
+            def parse_flexible_date(date_str: str) -> datetime:
+                """Parse date with flexible year format."""
+                parts = date_str.split('.')
+                if len(parts) != 3:
+                    raise ValueError("Invalid date format")
+                
+                day, month, year = parts
+                # If year is 2 digits, use %y, otherwise use %Y
+                if len(year) == 2:
+                    return datetime.strptime(date_str, "%d.%m.%y")
+                elif len(year) == 4:
+                    return datetime.strptime(date_str, "%d.%m.%Y")
+                else:
+                    raise ValueError("Year must be 2 or 4 digits")
+            
+            start = parse_flexible_date(start_date)
+            end = parse_flexible_date(end_date)
             
             if start >= end:
                 return False, "Дата начала должна быть раньше даты окончания"
@@ -318,7 +336,8 @@ class DisclaimerGenerator:
         if params.min_order_amount:
             conditions.append(f"от {params.min_order_amount} ₽")
         
-        if params.max_promo_discount:
+        # Don't add "не более X ₽" if discount is already in rubles (to avoid duplication)
+        if params.max_promo_discount and params.discount_unit != "₽":
             conditions.append(f"не более {params.max_promo_discount} ₽")
         
         conditions_text = " ".join(conditions)
