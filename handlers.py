@@ -10,13 +10,17 @@ from models import CreativeType, ChannelType, CreativeParams, CREATIVE_TYPE_NAME
 from generator import DisclaimerGenerator, ValidationError
 from keyboards import (
     get_creative_type_keyboard,
+    get_creative_type_keyboard_mass,
     get_geography_keyboard,
     get_geography_keyboard_multiple,
     get_channel_keyboard,
+    get_channel_keyboard_mass,
     get_yes_no_keyboard,
     get_discount_unit_keyboard,
+    get_discount_unit_keyboard_mass,
     get_skip_keyboard,
     get_confirmation_keyboard,
+    get_confirmation_keyboard_mass,
     get_result_keyboard,
     get_main_menu_keyboard,
     remove_keyboard,
@@ -648,21 +652,27 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext):
 @router.message(F.text == "⚡ Массовая генерация")
 async def cmd_mass_create(message: Message, state: FSMContext):
     """Start mass generation mode."""
+    logger.info(f"Starting mass generation for user {message.from_user.id}")
     await state.clear()
     await state.set_state(MassGeneration.choosing_type)
     await state.update_data(selected_cities=[])
-    
+
+    new_state = await state.get_state()
+    logger.info(f"Mass generation state set to: {new_state}")
+
     text = "🔥 <b>Режим массовой генерации</b>\n\nВыберите тип креатива:"
-    await message.answer(text, parse_mode="HTML", reply_markup=get_creative_type_keyboard())
+    await message.answer(text, parse_mode="HTML", reply_markup=get_creative_type_keyboard_mass())
 
 
-@router.callback_query(MassGeneration.choosing_type, F.data.startswith("type:"))
+@router.callback_query(MassGeneration.choosing_type, F.data.startswith("mass_type:"))
 async def mass_process_type_selection(callback: CallbackQuery, state: FSMContext):
     """Process creative type selection in mass mode."""
+    logger.info(f"Mass mode: type selection callback received: {callback.data}, user: {callback.from_user.id}")
     creative_type = callback.data.split(":")[1]
     await state.update_data(creative_type=creative_type)
-    
+
     await state.set_state(MassGeneration.choosing_multiple_cities)
+    logger.info(f"Mass mode: state set to choosing_multiple_cities")
     await callback.message.edit_text(
         f"✅ Тип: {CREATIVE_TYPE_NAMES[CreativeType(creative_type)]}\n\n"
         "Выберите города (можно несколько):",
@@ -700,27 +710,27 @@ async def mass_cities_ready(callback: CallbackQuery, state: FSMContext):
     """Proceed after cities selection."""
     data = await state.get_data()
     selected = data.get("selected_cities", [])
-    
+
     if not selected:
         await callback.answer("⚠️ Выберите хотя бы один город!", show_alert=True)
         return
-    
+
     await state.set_state(MassGeneration.choosing_channel)
-    
+
     cities_list = ", ".join([normalize_city_name(c) for c in selected[:5]])
     if len(selected) > 5:
         cities_list += f" и еще {len(selected) - 5}"
-    
+
     await callback.message.edit_text(
         f"✅ Выбрано городов: {len(selected)}\n"
         f"({cities_list})\n\n"
         "Выберите канал размещения:",
-        reply_markup=get_channel_keyboard()
+        reply_markup=get_channel_keyboard_mass()
     )
     await callback.answer()
 
 
-@router.callback_query(MassGeneration.choosing_channel, F.data.startswith("channel:"))
+@router.callback_query(MassGeneration.choosing_channel, F.data.startswith("mass_channel:"))
 async def mass_process_channel_selection(callback: CallbackQuery, state: FSMContext):
     """Process channel selection in mass mode."""
     channel = callback.data.split(":")[1]
@@ -779,10 +789,10 @@ async def show_confirmation_mass(message: Message, state: FSMContext):
     
     if data.get("start_date"):
         summary += f"📅 <b>Действует с:</b> {data['start_date']}\n"
-    
+
     summary += "\nБудут созданы дисклеймеры для всех выбранных городов. Продолжить?"
-    
-    await message.answer(summary, parse_mode="HTML", reply_markup=get_confirmation_keyboard())
+
+    await message.answer(summary, parse_mode="HTML", reply_markup=get_confirmation_keyboard_mass())
 
 
 # Mass generation - copy handlers for other parameters
@@ -868,10 +878,10 @@ async def mass_process_discount_size(message: Message, state: FSMContext):
 async def ask_discount_unit_mass(message: Message, state: FSMContext):
     """Ask for discount unit in mass mode."""
     await state.set_state(MassGeneration.choosing_discount_unit)
-    await message.answer("Выберите единицу измерения:", reply_markup=get_discount_unit_keyboard())
+    await message.answer("Выберите единицу измерения:", reply_markup=get_discount_unit_keyboard_mass())
 
 
-@router.callback_query(MassGeneration.choosing_discount_unit, F.data.startswith("unit:"))
+@router.callback_query(MassGeneration.choosing_discount_unit, F.data.startswith("mass_unit:"))
 async def mass_process_discount_unit(callback: CallbackQuery, state: FSMContext):
     """Process discount unit in mass mode."""
     unit = callback.data.split(":")[1]
@@ -900,10 +910,10 @@ async def mass_process_discount_unit(callback: CallbackQuery, state: FSMContext)
     
     if data.get("discount_size"):
         summary += f"💰 <b>Размер скидки:</b> {data['discount_size']}{unit}\n"
-    
+
     summary += "\nБудут созданы дисклеймеры для всех выбранных городов. Продолжить?"
-    
-    await callback.message.answer(summary, parse_mode="HTML", reply_markup=get_confirmation_keyboard())
+
+    await callback.message.answer(summary, parse_mode="HTML", reply_markup=get_confirmation_keyboard_mass())
     await callback.answer()
 
 
@@ -942,7 +952,7 @@ async def mass_process_start_date(message: Message, state: FSMContext):
     await ask_end_date_mass(message, state, "Введите дату окончания акции (формат: ДД.ММ.ГГ или ДД.ММ.ГГГГ):")
 
 
-@router.callback_query(MassGeneration.confirming, F.data == "confirm:yes")
+@router.callback_query(MassGeneration.confirming, F.data == "mass_confirm:yes")
 async def generate_mass_disclaimers(callback: CallbackQuery, state: FSMContext):
     """Generate disclaimers for all selected cities."""
     data = await state.get_data()
@@ -1041,7 +1051,7 @@ async def generate_mass_disclaimers(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(MassGeneration.confirming, F.data == "confirm:edit")
+@router.callback_query(MassGeneration.confirming, F.data == "mass_confirm:edit")
 async def mass_edit_parameters(callback: CallbackQuery, state: FSMContext):
     """Restart mass generation to edit parameters."""
     await callback.message.delete()
@@ -1051,7 +1061,7 @@ async def mass_edit_parameters(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(MassGeneration.confirming, F.data == "confirm:restart")
+@router.callback_query(MassGeneration.confirming, F.data == "mass_confirm:restart")
 async def mass_restart_creation(callback: CallbackQuery, state: FSMContext):
     """Restart mass generation."""
     await callback.message.delete()
@@ -1064,8 +1074,28 @@ async def mass_restart_creation(callback: CallbackQuery, state: FSMContext):
 @router.callback_query()
 async def handle_unhandled_callback(callback: CallbackQuery, state: FSMContext):
     """Handle any unhandled callback."""
-    logger.warning(f"Unhandled callback: {callback.data}, user: {callback.from_user.id}, state: {await state.get_state()}")
-    await callback.answer("⚠️ Неизвестная команда")
+    current_state = await state.get_state()
+    logger.warning(f"Unhandled callback: {callback.data}, user: {callback.from_user.id}, state: {current_state}")
+
+    # Don't show error for known callback patterns that should be handled
+    if callback.data and (
+        callback.data.startswith("type:") or
+        callback.data.startswith("geo:") or
+        callback.data.startswith("channel:") or
+        callback.data.startswith("city_toggle:") or
+        callback.data == "cities:ready" or
+        callback.data.startswith("mass_type:") or
+        callback.data.startswith("mass_channel:") or
+        callback.data.startswith("mass_unit:") or
+        callback.data.startswith("mass_confirm:")
+    ):
+        # These should have been handled by state-specific handlers
+        # Log detailed error and reset state
+        logger.error(f"Callback {callback.data} not handled properly. Current state: {current_state}. This indicates a state management issue.")
+        await callback.answer("⚠️ Произошла ошибка. Начните заново с /create или выберите действие в меню.")
+        await state.clear()
+    else:
+        await callback.answer("⚠️ Неизвестная команда")
 
 
 # Catch unhandled messages

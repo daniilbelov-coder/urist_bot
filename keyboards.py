@@ -206,6 +206,55 @@ def get_geography_keyboard_multiple(selected_cities: list = None) -> InlineKeybo
     return builder.as_markup()
 
 
+def get_creative_type_keyboard_mass() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting creative type in mass mode."""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(text="1️⃣ Скидка новичка (динамическая)", callback_data="mass_type:dynamic_newcomer")
+    builder.button(text="2️⃣ Скидка новичка (классическая)", callback_data="mass_type:classic_newcomer")
+    builder.button(text="3️⃣ Промокод", callback_data="mass_type:promo_code")
+    builder.button(text="4️⃣ Сертификат", callback_data="mass_type:certificate")
+    builder.button(text="5️⃣ Имиджевый", callback_data="mass_type:image")
+    builder.button(text="6️⃣ Продуктовый", callback_data="mass_type:product")
+    builder.button(text="7️⃣ Вендорский", callback_data="mass_type:vendor")
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_channel_keyboard_mass() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting channel in mass mode."""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(text="📺 ТВ/Радио", callback_data="mass_channel:tv_radio")
+    builder.button(text="📱 Другие форматы", callback_data="mass_channel:other")
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_discount_unit_keyboard_mass() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting discount unit in mass mode."""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(text="₽ Рубли", callback_data="mass_unit:₽")
+    builder.button(text="% Проценты", callback_data="mass_unit:%")
+
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def get_confirmation_keyboard_mass() -> InlineKeyboardMarkup:
+    """Get confirmation keyboard for mass mode."""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(text="✅ Создать", callback_data="mass_confirm:yes")
+    builder.button(text="🔄 Начать заново", callback_data="mass_confirm:restart")
+
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def remove_keyboard() -> ReplyKeyboardRemove:
     """Remove keyboard."""
     return ReplyKeyboardRemove()
