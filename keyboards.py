@@ -60,6 +60,10 @@ def get_geography_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="🏪 Тамбов", callback_data="geo:тамбов")
     builder.button(text="🏪 Владимир", callback_data="geo:владимир")
     builder.button(text="🏪 Иркутск", callback_data="geo:иркутск")
+    builder.button(text="🏪 Набережные Челны", callback_data="geo:набережные челны")
+    builder.button(text="🏪 Нижнекамск", callback_data="geo:нижнекамск")
+    builder.button(text="🏪 Чебоксары", callback_data="geo:чебоксары")
+    builder.button(text="🏪 Йошкар-Ола", callback_data="geo:йошкар-ола")
     
     builder.adjust(2)
     return builder.as_markup()
@@ -133,10 +137,73 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     
     builder.button(text="➕ Создать дисклеймер")
+    builder.button(text="⚡ Массовая генерация")
     builder.button(text="❓ Помощь")
     
-    builder.adjust(2)
+    builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
+
+
+def add_back_button(keyboard: InlineKeyboardMarkup, callback_data: str) -> InlineKeyboardMarkup:
+    """Add back button to existing keyboard."""
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    
+    builder = InlineKeyboardBuilder()
+    # Copy existing buttons
+    for row in keyboard.inline_keyboard:
+        for button in row:
+            builder.button(text=button.text, callback_data=button.callback_data)
+    
+    # Add back button
+    builder.button(text="◀️ Назад", callback_data=callback_data)
+    
+    # Adjust layout: keep original rows, back button on new row
+    original_rows = len(keyboard.inline_keyboard)
+    row_widths = [len(row) for row in keyboard.inline_keyboard]
+    row_widths.append(1)  # Back button on separate row
+    builder.adjust(*row_widths)
+    
+    return builder.as_markup()
+
+
+def get_geography_keyboard_multiple(selected_cities: list = None) -> InlineKeyboardMarkup:
+    """Get keyboard for selecting multiple cities."""
+    if selected_cities is None:
+        selected_cities = []
+    
+    builder = InlineKeyboardBuilder()
+    
+    from models import ALL_CITIES, CORPORATE_CITIES, FRANCHISE_ENTITIES
+    
+    # МО cannot be selected in multiple mode (it's for dynamic discount only)
+    
+    # Corporate cities
+    for city in ["москва", "санкт-петербург", "казань", "новосибирск", "нижний новгород", 
+                 "ростов", "краснодар", "екатеринбург", "челябинск", "тюмень", 
+                 "сочи", "воронеж", "пермь"]:
+        checkmark = "✅ " if city in selected_cities else ""
+        city_display = city.capitalize()
+        builder.button(text=f"{checkmark}📍 {city_display}", callback_data=f"city_toggle:{city}")
+    
+    # Franchise cities
+    for city in sorted(FRANCHISE_ENTITIES.keys()):
+        checkmark = "✅ " if city in selected_cities else ""
+        city_display = city.capitalize() if city != "великий новгород" else "Великий Новгород"
+        if city == "йошкар-ола":
+            city_display = "Йошкар-Ола"
+        elif city == "набережные челны":
+            city_display = "Набережные Челны"
+        builder.button(text=f"{checkmark}🏪 {city_display}", callback_data=f"city_toggle:{city}")
+    
+    builder.adjust(2)
+    
+    # Add ready button
+    count = len(selected_cities)
+    ready_text = f"✅ Готово (выбрано: {count})" if count > 0 else "⚠️ Выберите города"
+    builder.button(text=ready_text, callback_data="cities:ready")
+    builder.adjust(*([2] * ((builder.__len__() - 1) // 2) + [1]))
+    
+    return builder.as_markup()
 
 
 def remove_keyboard() -> ReplyKeyboardRemove:
