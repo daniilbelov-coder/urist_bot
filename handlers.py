@@ -870,7 +870,31 @@ async def mass_process_discount_unit(callback: CallbackQuery, state: FSMContext)
                             min_order_amount=None, max_promo_discount=None)
     
     await callback.message.delete()
-    await show_confirmation_mass(callback.message, state)
+    
+    # Create a temporary message object to pass to show_confirmation_mass
+    # We need to send a new message instead of editing the deleted one
+    data = await state.get_data()
+    creative_type = CreativeType(data["creative_type"])
+    selected_cities = data.get("selected_cities", [])
+    
+    # Set state before showing confirmation
+    await state.set_state(MassGeneration.confirming)
+    
+    # Build summary
+    summary = "📋 <b>Проверьте параметры для массовой генерации:</b>\n\n"
+    summary += f"🎨 <b>Тип:</b> {CREATIVE_TYPE_NAMES[creative_type]}\n"
+    summary += f"🌍 <b>Городов:</b> {len(selected_cities)}\n"
+    summary += f"📺 <b>Канал:</b> {'ТВ/Радио' if data['channel'] == 'tv_radio' else 'Другие форматы'}\n"
+    
+    if data.get("end_date"):
+        summary += f"📅 <b>Действует до:</b> {data['end_date']}\n"
+    
+    if data.get("discount_size"):
+        summary += f"💰 <b>Размер скидки:</b> {data['discount_size']}{unit}\n"
+    
+    summary += "\nБудут созданы дисклеймеры для всех выбранных городов. Продолжить?"
+    
+    await callback.message.answer(summary, parse_mode="HTML", reply_markup=get_confirmation_keyboard())
     await callback.answer()
 
 
@@ -1018,6 +1042,14 @@ async def mass_restart_creation(callback: CallbackQuery, state: FSMContext):
     # Create a fake message object for cmd_mass_create
     await cmd_mass_create(message_obj, state)
     await callback.answer()
+
+
+# Catch unhandled callbacks
+@router.callback_query()
+async def handle_unhandled_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle any unhandled callback."""
+    logger.warning(f"Unhandled callback: {callback.data}, user: {callback.from_user.id}, state: {await state.get_state()}")
+    await callback.answer("⚠️ Неизвестная команда")
 
 
 # Catch unhandled messages
