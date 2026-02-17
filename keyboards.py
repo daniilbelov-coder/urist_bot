@@ -135,12 +135,11 @@ def get_result_keyboard() -> InlineKeyboardMarkup:
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Get main menu keyboard."""
     builder = ReplyKeyboardBuilder()
-    
+
     builder.button(text="➕ Создать дисклеймер")
-    builder.button(text="⚡ Массовая генерация")
     builder.button(text="❓ Помощь")
-    
-    builder.adjust(2, 1)
+
+    builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -163,95 +162,6 @@ def add_back_button(keyboard: InlineKeyboardMarkup, callback_data: str) -> Inlin
     row_widths.append(1)  # Back button on separate row
     builder.adjust(*row_widths)
     
-    return builder.as_markup()
-
-
-def get_geography_keyboard_multiple(selected_cities: list = None) -> InlineKeyboardMarkup:
-    """Get keyboard for selecting multiple cities."""
-    if selected_cities is None:
-        selected_cities = []
-    
-    builder = InlineKeyboardBuilder()
-    
-    from models import ALL_CITIES, CORPORATE_CITIES, FRANCHISE_ENTITIES
-    
-    # МО cannot be selected in multiple mode (it's for dynamic discount only)
-    
-    # Corporate cities
-    for city in ["москва", "санкт-петербург", "казань", "новосибирск", "нижний новгород", 
-                 "ростов", "краснодар", "екатеринбург", "челябинск", "тюмень", 
-                 "сочи", "воронеж", "пермь"]:
-        checkmark = "✅ " if city in selected_cities else ""
-        city_display = city.capitalize()
-        builder.button(text=f"{checkmark}📍 {city_display}", callback_data=f"city_toggle:{city}")
-    
-    # Franchise cities
-    for city in sorted(FRANCHISE_ENTITIES.keys()):
-        checkmark = "✅ " if city in selected_cities else ""
-        city_display = city.capitalize() if city != "великий новгород" else "Великий Новгород"
-        if city == "йошкар-ола":
-            city_display = "Йошкар-Ола"
-        elif city == "набережные челны":
-            city_display = "Набережные Челны"
-        builder.button(text=f"{checkmark}🏪 {city_display}", callback_data=f"city_toggle:{city}")
-    
-    builder.adjust(2)
-    
-    # Add ready button
-    count = len(selected_cities)
-    ready_text = f"✅ Готово (выбрано: {count})" if count > 0 else "⚠️ Выберите города"
-    builder.button(text=ready_text, callback_data="cities:ready")
-    builder.adjust(*([2] * ((builder.__len__() - 1) // 2) + [1]))
-    
-    return builder.as_markup()
-
-
-def get_creative_type_keyboard_mass() -> InlineKeyboardMarkup:
-    """Get keyboard for selecting creative type in mass mode."""
-    builder = InlineKeyboardBuilder()
-
-    builder.button(text="1️⃣ Скидка новичка (динамическая)", callback_data="mass_type:dynamic_newcomer")
-    builder.button(text="2️⃣ Скидка новичка (классическая)", callback_data="mass_type:classic_newcomer")
-    builder.button(text="3️⃣ Промокод", callback_data="mass_type:promo_code")
-    builder.button(text="4️⃣ Сертификат", callback_data="mass_type:certificate")
-    builder.button(text="5️⃣ Имиджевый", callback_data="mass_type:image")
-    builder.button(text="6️⃣ Продуктовый", callback_data="mass_type:product")
-    builder.button(text="7️⃣ Вендорский", callback_data="mass_type:vendor")
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def get_channel_keyboard_mass() -> InlineKeyboardMarkup:
-    """Get keyboard for selecting channel in mass mode."""
-    builder = InlineKeyboardBuilder()
-
-    builder.button(text="📺 ТВ/Радио", callback_data="mass_channel:tv_radio")
-    builder.button(text="📱 Другие форматы", callback_data="mass_channel:other")
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def get_discount_unit_keyboard_mass() -> InlineKeyboardMarkup:
-    """Get keyboard for selecting discount unit in mass mode."""
-    builder = InlineKeyboardBuilder()
-
-    builder.button(text="₽ Рубли", callback_data="mass_unit:₽")
-    builder.button(text="% Проценты", callback_data="mass_unit:%")
-
-    builder.adjust(2)
-    return builder.as_markup()
-
-
-def get_confirmation_keyboard_mass() -> InlineKeyboardMarkup:
-    """Get confirmation keyboard for mass mode."""
-    builder = InlineKeyboardBuilder()
-
-    builder.button(text="✅ Создать", callback_data="mass_confirm:yes")
-    builder.button(text="🔄 Начать заново", callback_data="mass_confirm:restart")
-
-    builder.adjust(2)
     return builder.as_markup()
 
 
